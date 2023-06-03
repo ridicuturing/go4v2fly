@@ -35,7 +35,5 @@ jobs:
       - name: Build and push Docker images
         uses: docker/build-push-action@v4.0.0
         with:
-          file: ./guard/Dockerfile
-          context: ./guard
           push: true
-          tags: hoi4tech/live-java:latest
+          tags: hoi4tech/go4v2fly:latest
