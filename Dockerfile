@@ -6,4 +6,3 @@ EXPOSE 1080 1081
 
 ENTRYPOINT ["go4v2fly"]
 
-docker run -d --name go4v2fly-container go4v2fly -url https://justmysocks3.net/members/getsub.php?service=123144&id=9db9ccfe-51ad-401a-8f00-08db4d9c3023

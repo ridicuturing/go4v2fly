@@ -1,0 +1,41 @@
+name: Go Build
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v4.0.1
+        with:
+          go-version: '1.20.4'
+
+      - name: Build
+        run: |
+          go build -o go4v2fly
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          name: go4v2fly
+          path: ./go4v2fly
+      - name: Docker Login
+          uses: docker/login-action@v2.1.0
+          with:
+            username: ${{ secrets.DOCKERHUB_USERNAME }}
+            password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v4.0.0
+        with:
+          file: ./guard/Dockerfile
+          context: ./guard
+          push: true
+          tags: hoi4tech/live-java:latest

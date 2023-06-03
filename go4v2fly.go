@@ -23,7 +23,7 @@ var proxySocksPort = 1081
 
 func main() {
 	// 1. 使用 http 获取 subscribeUrl 的 base64 编码内容
-	url := flag.String("url", "default name", "a http url to subscribe")
+	url := flag.String("url", "", "a http url to subscribe")
 	flag.Parse()
 	if url == nil {
 		fmt.Println("param '-url' can't be null!")
@@ -33,14 +33,26 @@ func main() {
 	var server = ""
 	ticker := time.NewTicker(time.Second * 1)
 	for range ticker.C {
-		result, _ := parseURL(*url)
-		fastestServer, _ := selectFastest(result)
+		result, continueErr := parseURL(*url)
+		if continueErr != nil {
+			fmt.Println(continueErr)
+			continue
+		}
+		fastestServer, continueErr := selectFastest(result)
+		if continueErr != nil {
+			fmt.Println(continueErr)
+			continue
+		}
 		fastestServerStr := fastestServer["add"].(string) + ":" + fastestServer["port"].(string)
 		if server == fastestServerStr {
 			continue
 		}
 		server = fastestServerStr
-		marshal, _ := json.Marshal(fastestServer)
+		marshal, continueErr := json.Marshal(fastestServer)
+		if continueErr != nil {
+			fmt.Println(continueErr)
+			continue
+		}
 		fmt.Println(string(marshal))
 		reloadConfigFile(fastestServer)
 	}
@@ -50,11 +62,11 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 	if strings.HasPrefix(url, "ss://") {
 		// 解析 SS 协议 URL 的相关信息
 		ssParts := strings.Split(url[5:], "#")
-		ssMethodAndPassword, err := base64.RawStdEncoding.DecodeString(ssParts[0])
+		ssMethodAndPassword, err := tryBase64Decode(ssParts[0])
 		if err != nil {
 			return nil, err
 		}
-		ssMethodAndPasswordParts := strings.Split(string(ssMethodAndPassword), ":")
+		ssMethodAndPasswordParts := strings.Split(ssMethodAndPassword, ":")
 		method := ssMethodAndPasswordParts[0]
 		passAndAddr := strings.Split(ssMethodAndPasswordParts[1], "@")
 		password := passAndAddr[0]
@@ -82,18 +94,40 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 					},
 				},
 			},
+			"v2rayText": map[string]interface{}{
+				"tag":      "proxy",
+				"protocol": "shadowsocks",
+				"settings": map[string]interface{}{
+					"servers": []map[string]interface{}{
+						{
+							"address":  addr,
+							"method":   method,
+							"ota":      false,
+							"password": password,
+							"port":     port,
+							"level":    1,
+						},
+					},
+				},
+				"streamSettings": map[string]interface{}{
+					"network": "tcp",
+				},
+				"mux": map[string]interface{}{
+					"enabled":     false,
+					"concurrency": -1,
+				},
+			},
 		}
 		return []map[string]interface{}{obj}, nil
 	} else if strings.HasPrefix(url, "vmess://") {
 		// 解析 Vmess 协议 URL 的相关信息
-		vmessParts, err := base64.RawStdEncoding.DecodeString(url[8:])
+		vmessParts, err := tryBase64Decode(url[8:])
 		if err != nil {
 			return nil, err
 		}
-
 		// 将 JSON 字符串解析为 map[string]interface{}
 		var obj map[string]interface{}
-		err = json.Unmarshal(vmessParts, &obj)
+		err = json.Unmarshal([]byte(vmessParts), &obj)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +167,11 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 		content := string(body)
 
 		// 解码并获取协议链接
-		decodedContent, err := base64.StdEncoding.DecodeString(content)
-		urls := strings.Split(string(decodedContent), "\n")
+		decodedContent, err := tryBase64Decode(content)
+		if err != nil {
+			return []map[string]interface{}{}, err
+		}
+		urls := strings.Split(decodedContent, "\n")
 		var result []map[string]interface{}
 		for _, urlz := range urls {
 			obj, err := parseURL(urlz)
@@ -144,7 +181,6 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 			}
 			result = append(result, obj...)
 		}
-
 		// 将结果以 JSON 数组的形式返回
 		return result, nil
 	}
@@ -153,34 +189,66 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 	return nil, errors.New("unsupported URL protocol")
 }
 
+func tryBase64Decode(code string) (string, error) {
+	decode, err1 := base64.RawStdEncoding.DecodeString(code)
+	if err1 != nil {
+		decode, err2 := base64.StdEncoding.DecodeString(code)
+		if err2 != nil {
+			return "", errors.New("vmess base decode error: " + code + "\n" + err1.Error() + "\n" + err2.Error())
+		}
+		return string(decode), nil
+	}
+	return string(decode), nil
+}
+
 func selectFastest(servers []map[string]interface{}) (map[string]interface{}, error) {
+	type result struct {
+		server  map[string]interface{}
+		latency float64
+		err     error
+	}
+	resultChan := make(chan result, len(servers))
+
+	for _, server := range servers {
+		go func(server map[string]interface{}) {
+			ip := server["add"].(string)
+			port := server["port"].(string)
+
+			// 获取当前时间戳
+			start := time.Now().UnixNano()
+
+			// 建立 TCP 连接
+			dialer := &net.Dialer{
+				Timeout: 10 * time.Second,
+			}
+			conn, err := dialer.Dial("tcp", ip+":"+port)
+			if err != nil {
+				resultChan <- result{nil, 0, err}
+				return
+			}
+			defer conn.Close()
+
+			// 计算延迟
+			end := time.Now().UnixNano()
+			latency := float64(end-start) / float64(time.Millisecond)
+
+			resultChan <- result{server, latency, nil}
+		}(server)
+	}
+
 	var fastestServer map[string]interface{}
 	var minLatency float64
-	for _, server := range servers {
-		ip := server["add"].(string)
-		port := server["port"].(string)
-
-		// 获取当前时间戳
-		start := time.Now().UnixNano()
-
-		// 建立 TCP 连接
-		conn, err := net.Dial("tcp", ip+":"+port)
-		if err != nil {
-			fmt.Println(ip + ":" + port + " is not available")
+	for i := 0; i < len(servers); i++ {
+		r := <-resultChan
+		if r.err != nil {
+			// 处理连接错误
 			continue
 		}
-		defer conn.Close()
-
-		// 计算延迟
-		end := time.Now().UnixNano()
-		latency := float64(end-start) / float64(time.Millisecond)
-
-		//fmt.Printf("%s:%s is available, latency: %.2f ms\n", ip, port, latency)
 
 		// 更新最小延迟和最快的服务器
-		if fastestServer == nil || latency < minLatency {
-			fastestServer = server
-			minLatency = latency
+		if fastestServer == nil || r.latency < minLatency {
+			fastestServer = r.server
+			minLatency = r.latency
 		}
 	}
 
@@ -270,11 +338,11 @@ func reloadConfigFile(server map[string]interface{}) {
 	// 将美化过的 JSON 数据输出到 config.json 文件
 	errmk := os.MkdirAll(configFilePath, os.ModePerm)
 	if errmk != nil {
-		panic(errmk)
+		fmt.Println(errmk)
 	}
 	err = ioutil.WriteFile(configFilePath+configFileName, jsonData, 0644)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 	restartV2Ray()
 }
