@@ -21,7 +21,7 @@ jobs:
 
       - name: Build
         run: |
-          go build -o go4v2fly
+           CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -tags musl -o go4v2fly .
         
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
