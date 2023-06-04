@@ -31,7 +31,8 @@ func main() {
 	}
 	fmt.Println("subscribe url ：" + *url)
 	var server = ""
-	ticker := time.NewTicker(time.Second * 1)
+	interval := flag.Int("interval", 1, "a http url to subscribe")
+	ticker := time.NewTicker(time.Second * time.Duration(*interval))
 	for range ticker.C {
 		result, continueErr := parseURL(*url)
 		if continueErr != nil {
@@ -192,7 +193,7 @@ func parseHTTP(url string) ([]map[string]interface{}, error) {
 	for _, urlz := range urls {
 		obj, err := parseURL(urlz)
 		if err != nil {
-			fmt.Println(err.Error())
+			fmt.Println(err.Error() + " : " + urlz)
 			continue
 		}
 		result = append(result, obj...)
