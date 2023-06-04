@@ -6,6 +6,4 @@ ENV CONFIG_URL=vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIkpNUy0xMjMxNDRAYzUwczUua
 
 EXPOSE 1080 1081
 
-ENTRYPOINT ["go4v2fly"]
-
-CMD ["-url" , "$CONFIG_URL"]
+CMD go4v2fly -url $CONFIG_URL
