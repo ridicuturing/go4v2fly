@@ -23,7 +23,7 @@ var proxySocksPort = 1081
 
 func main() {
 	// 1. 使用 http 获取 subscribeUrl 的 base64 编码内容
-	url := flag.String("url", "", "a http url to subscribe")
+	url := flag.String("url", "vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIkpNUy0xMjMxNDRAYzUwczUuamp2aXA4LmNvbTozMzUxOCIsDQogICJhZGQiOiAiMTA0LjE5My4xMC40MyIsDQogICJwb3J0IjogIjMzNTE4IiwNCiAgImlkIjogIjlkYjljY2ZlLTUxYWQtNDAxYS04ZjAwLTA4ZGI0ZDljMzAyMyIsDQogICJhaWQiOiAiMCIsDQogICJzY3kiOiAiYXV0byIsDQogICJuZXQiOiAidGNwIiwNCiAgInR5cGUiOiAibm9uZSIsDQogICJob3N0IjogIiIsDQogICJwYXRoIjogIiIsDQogICJ0bHMiOiAibm9uZSIsDQogICJzbmkiOiAiIiwNCiAgImFscG4iOiAiIg0KfQ==", "a http url to subscribe")
 	flag.Parse()
 	if url == nil {
 		fmt.Println("param '-url' can't be null!")
@@ -43,48 +43,75 @@ func main() {
 			fmt.Println(continueErr)
 			continue
 		}
-		fastestServerStr := fastestServer["add"].(string) + ":" + fastestServer["port"].(string)
-		if server == fastestServerStr {
-			continue
-		}
-		server = fastestServerStr
 		marshal, continueErr := json.Marshal(fastestServer)
 		if continueErr != nil {
 			fmt.Println(continueErr)
 			continue
 		}
 		fmt.Println(string(marshal))
+		fastestServerStr := fastestServer["add"].(string) + ":" + fastestServer["port"].(string)
+		if server == fastestServerStr {
+			continue
+		}
+		server = fastestServerStr
 		reloadConfigFile(fastestServer)
 	}
 }
 
 func parseURL(url string) ([]map[string]interface{}, error) {
-	if strings.HasPrefix(url, "ss://") {
-		// 解析 SS 协议 URL 的相关信息
-		ssParts := strings.Split(url[5:], "#")
-		ssMethodAndPassword, err := tryBase64Decode(ssParts[0])
-		if err != nil {
-			return nil, err
-		}
-		ssMethodAndPasswordParts := strings.Split(ssMethodAndPassword, ":")
-		method := ssMethodAndPasswordParts[0]
-		passAndAddr := strings.Split(ssMethodAndPasswordParts[1], "@")
-		password := passAndAddr[0]
-		addr := passAndAddr[1]
-		port := ssMethodAndPasswordParts[2]
+	switch {
+	case strings.HasPrefix(url, "ss://"):
+		return parseSS(url)
+	case strings.HasPrefix(url, "vmess://"):
+		return parseVmess(url)
+	case strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://"):
+		return parseHTTP(url)
+	default:
+		return nil, errors.New("unsupported URL protocol")
+	}
+}
 
-		// 构造 JSON 对象并返回
-		obj := map[string]interface{}{
-			"type":     "ss",
-			"add":      addr,
-			"port":     port,
-			"method":   method,
-			"password": password,
-			"outboundsText": map[string]interface{}{
-				"tag":      "proxy",
-				"protocol": "shadowsocks",
-				"settings": map[string]interface{}{
-					"servers": map[string]interface{}{
+func parseSS(url string) ([]map[string]interface{}, error) {
+	// 解析 SS 协议 URL 的相关信息
+	ssParts := strings.Split(url[5:], "#")
+	ssMethodAndPassword, err := tryBase64Decode(ssParts[0])
+	if err != nil {
+		return nil, err
+	}
+	ssMethodAndPasswordParts := strings.Split(ssMethodAndPassword, ":")
+	method := ssMethodAndPasswordParts[0]
+	passAndAddr := strings.Split(ssMethodAndPasswordParts[1], "@")
+	password := passAndAddr[0]
+	addr := passAndAddr[1]
+	port := ssMethodAndPasswordParts[2]
+
+	// 构造 JSON 对象并返回
+	obj := map[string]interface{}{
+		"type":     "ss",
+		"add":      addr,
+		"port":     port,
+		"method":   method,
+		"password": password,
+		"outboundsText": map[string]interface{}{
+			"tag":      "proxy",
+			"protocol": "shadowsocks",
+			"settings": map[string]interface{}{
+				"servers": map[string]interface{}{
+					"address":  addr,
+					"method":   method,
+					"ota":      false,
+					"password": password,
+					"port":     port,
+					"level":    1,
+				},
+			},
+		},
+		"v2rayText": map[string]interface{}{
+			"tag":      "proxy",
+			"protocol": "shadowsocks",
+			"settings": map[string]interface{}{
+				"servers": []map[string]interface{}{
+					{
 						"address":  addr,
 						"method":   method,
 						"ota":      false,
@@ -94,99 +121,84 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 					},
 				},
 			},
-			"v2rayText": map[string]interface{}{
-				"tag":      "proxy",
-				"protocol": "shadowsocks",
-				"settings": map[string]interface{}{
-					"servers": []map[string]interface{}{
-						{
-							"address":  addr,
-							"method":   method,
-							"ota":      false,
-							"password": password,
-							"port":     port,
-							"level":    1,
-						},
-					},
-				},
-				"streamSettings": map[string]interface{}{
-					"network": "tcp",
-				},
-				"mux": map[string]interface{}{
-					"enabled":     false,
-					"concurrency": -1,
-				},
+			"streamSettings": map[string]interface{}{
+				"network": "tcp",
 			},
-		}
-		return []map[string]interface{}{obj}, nil
-	} else if strings.HasPrefix(url, "vmess://") {
-		// 解析 Vmess 协议 URL 的相关信息
-		vmessParts, err := tryBase64Decode(url[8:])
-		if err != nil {
-			return nil, err
-		}
-		// 将 JSON 字符串解析为 map[string]interface{}
-		var obj map[string]interface{}
-		err = json.Unmarshal([]byte(vmessParts), &obj)
-		if err != nil {
-			return nil, err
-		}
-		obj["type"] = "vmess"
-		port, err := strconv.Atoi(obj["port"].(string))
-		obj["v2rayText"] = map[string]interface{}{
-			"tag":      "proxy",
-			"protocol": "vmess",
-			"settings": map[string]interface{}{
-				"vnext": []map[string]interface{}{
-					{
-						"address": obj["add"],
-						"port":    port,
-						"users": []map[string]interface{}{
-							{
-								"id":       obj["id"],
-								"alterId":  obj["aid"],
-								"email":    "t@t.tt",
-								"security": "auto",
-							},
-						},
-					},
-				},
+			"mux": map[string]interface{}{
+				"enabled":     false,
+				"concurrency": -1,
 			},
-		}
-		return []map[string]interface{}{obj}, nil
-	} else if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		resp, err := http.Get(url)
-		if err != nil {
-			panic(err)
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		content := string(body)
-
-		// 解码并获取协议链接
-		decodedContent, err := tryBase64Decode(content)
-		if err != nil {
-			return []map[string]interface{}{}, err
-		}
-		urls := strings.Split(decodedContent, "\n")
-		var result []map[string]interface{}
-		for _, urlz := range urls {
-			obj, err := parseURL(urlz)
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			result = append(result, obj...)
-		}
-		// 将结果以 JSON 数组的形式返回
-		return result, nil
+		},
 	}
+	return []map[string]interface{}{obj}, nil
+}
 
-	// 如果 URL 不是 SS、Vmess 协议或 http/https，则返回错误
-	return nil, errors.New("unsupported URL protocol")
+func parseVmess(url string) ([]map[string]interface{}, error) {
+	// 解析 Vmess 协议 URL 的相关信息
+	vmessParts, err := tryBase64Decode(url[8:])
+	if err != nil {
+		return nil, err
+	}
+	// 将 JSON 字符串解析为 map[string]interface{}
+	var obj map[string]interface{}
+	err = json.Unmarshal([]byte(vmessParts), &obj)
+	if err != nil {
+		return nil, err
+	}
+	obj["type"] = "vmess"
+	port, err := strconv.Atoi(obj["port"].(string))
+	obj["v2rayText"] = map[string]interface{}{
+		"tag":      "proxy",
+		"protocol": "vmess",
+		"settings": map[string]interface{}{
+			"vnext": []map[string]interface{}{
+				{
+					"address": obj["add"],
+					"port":    port,
+					"users": []map[string]interface{}{
+						{
+							"id":       obj["id"],
+							"alterId":  obj["aid"],
+							"email":    "t@t.tt",
+							"security": "auto",
+						},
+					},
+				},
+			},
+		},
+	}
+	return []map[string]interface{}{obj}, nil
+}
+
+func parseHTTP(url string) ([]map[string]interface{}, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	content := string(body)
+
+	// 解码并获取协议链接
+	decodedContent, err := tryBase64Decode(content)
+	if err != nil {
+		return []map[string]interface{}{}, err
+	}
+	urls := strings.Split(decodedContent, "\n")
+	var result []map[string]interface{}
+	for _, urlz := range urls {
+		obj, err := parseURL(urlz)
+		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		result = append(result, obj...)
+	}
+	// 将结果以 JSON 数组的形式返回
+	return result, nil
 }
 
 func tryBase64Decode(code string) (string, error) {
