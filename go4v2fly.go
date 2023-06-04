@@ -96,7 +96,16 @@ func checkOpenaiAvailable() bool {
 		return false
 	}
 	// 判断网络是否联通
+	defer resp.Body.Close()
+
+	// 读取 Response Body 并将其打印到控制台
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
 	if resp.StatusCode >= 0 {
+		fmt.Println(string(body))
 		return true
 	}
 	return false
