@@ -73,14 +73,16 @@ func goSleep() int {
 }
 
 func checkCurrentProxy() int {
-	if checkOpenaiAvailable() {
-		return STATE_DONE
-	} else {
-		fmt.Println("remove proxy : " + currentFastestProxy["pid"].(string))
-		delete(currentProxies, currentFastestProxy["pid"].(string))
-		currentFastestProxy = nil
-		return STATE_FIND_FASTEST_PROXY
+	for i := 0; i < 5; i++ {
+		fmt.Println("try go connet openai with proxy : " + currentFastestProxy["pid"].(string))
+		if checkOpenaiAvailable() {
+			return STATE_DONE
+		}
 	}
+	fmt.Println("remove proxy : " + currentFastestProxy["pid"].(string))
+	delete(currentProxies, currentFastestProxy["pid"].(string))
+	currentFastestProxy = nil
+	return STATE_FIND_FASTEST_PROXY
 }
 
 func checkOpenaiAvailable() bool {
