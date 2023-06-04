@@ -169,6 +169,7 @@ func startV2Ray() {
 			fmt.Println(scannerErr.Text())
 		}
 	}()
+	time.Sleep(time.Second * 1)
 }
 
 var currentFastestProxy map[string]interface{}
