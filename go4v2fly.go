@@ -43,7 +43,28 @@ func main() {
 	fmt.Println("subscribe url ：" + *subscribeUrl)
 	state := STATE_READY_FOR_SUBSCRIBE
 	for {
+		stateToString(state)
 		state = stateProcessor(state)
+	}
+}
+
+func stateToString(state int) {
+	states := []string{
+		"STATE_READY_FOR_SUBSCRIBE",
+		"STATE_SUBSCRIPTION_NOT_UPDATE",
+		"STATE_FIND_FASTEST_PROXY",
+		"STATE_SWITCH_TO_CURRENT_FASTEST_PROXY",
+		"STATE_CHECK",
+		"STATE_TEMPORARY_ANOMALY",
+		"STATE_DONE",
+		"STATE_ERROR",
+		"STATE_EXIT",
+	}
+
+	if state >= 0 && state < len(states) {
+		fmt.Println(states[state])
+	} else {
+		fmt.Println(states[state])
 	}
 }
 
@@ -55,16 +76,13 @@ func stateProcessor(state int) (nextState int) {
 		return findFastestProxy()
 	case STATE_SWITCH_TO_CURRENT_FASTEST_PROXY:
 		return switchToCurrentFastestProxy()
-	case STATE_SUBSCRIPTION_NOT_UPDATE:
-	case STATE_CHECK:
+	case STATE_SUBSCRIPTION_NOT_UPDATE, STATE_CHECK:
 		return checkCurrentProxy()
-	case STATE_DONE:
-	case STATE_ERROR:
-	case STATE_TEMPORARY_ANOMALY:
+	case STATE_DONE, STATE_ERROR, STATE_TEMPORARY_ANOMALY:
+		fallthrough
 	default:
 		return goSleep()
 	}
-	return goSleep()
 }
 
 func goSleep() int {
