@@ -6,5 +6,5 @@ COPY ./go4v2fly /usr/local/bin/
 EXPOSE 1080 1081
 
 ENTRYPOINT []
-CMD go4v2fly -url $CONFIG_URL
+CMD go4v2fly -url $url
 
