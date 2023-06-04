@@ -67,7 +67,7 @@ func parseURL(url string) ([]map[string]interface{}, error) {
 	case strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://"):
 		return parseHTTP(url)
 	default:
-		return nil, errors.New("unsupported URL protocol")
+		return nil, errors.New("unsupported URL protocol(" + url + ")")
 	}
 }
 
