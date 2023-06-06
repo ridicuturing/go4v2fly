@@ -201,6 +201,10 @@ func findFastestProxy() int {
 		err     error
 	}
 	resultChan := make(chan result, len(currentProxies))
+	for k, v := range currentProxies {
+	    	fmt.Printf("Key: %v, Value: %v\n", k, v)
+	}
+
 
 	for _, proxy := range currentProxies {
 		go func(proxy map[string]interface{}) {
